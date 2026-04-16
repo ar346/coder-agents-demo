@@ -188,17 +188,14 @@ module "coder-login" {
   agent_id = coder_agent.main.id
 }
 
-module "vscode-web" {
-  count          = data.coder_workspace.me.start_count
-  source         = "registry.coder.com/coder/vscode-web/coder"
-  agent_id       = coder_agent.main.id
-  folder         = local.work_folder
-  accept_license = true
-  install_prefix = "/usr/local"
-  use_cached     = true
-  offline        = false
-  order          = 1
-  group          = "Web Editors"
+module "code-server" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/code-server/coder"
+  version  = "1.3.0"
+  agent_id = coder_agent.main.id
+  folder   = local.work_folder
+  order    = 1
+  group    = "Web Editors"
 }
 
 module "vscode-desktop" {
