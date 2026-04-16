@@ -122,6 +122,22 @@ resource "coder_agent" "main" {
   os                 = "linux"
   arch               = "amd64"
   connection_timeout = 360
+  startup_script     = <<-EOT
+    set -e
+    # Start the desktop environment (Xfce + VNC + noVNC)
+    if [ -f /coder/start_vnc.sh ]; then
+      /coder/start_vnc.sh >/tmp/vnc.log 2>&1 &
+    elif command -v supervisord &>/dev/null; then
+      supervisord -c /etc/supervisord.conf >/tmp/supervisord.log 2>&1 &
+    fi
+  EOT
+
+  display_apps {
+    vscode          = false
+    vscode_insiders = false
+    web_terminal    = true
+    ssh_helper      = true
+  }
 
   # The following metadata blocks are optional. They are used to display
   # information about your workspace in the dashboard. You can remove them
@@ -177,6 +193,24 @@ resource "coder_agent" "main" {
     EOT
     interval = 60
     timeout  = 1
+  }
+}
+
+# Desktop (noVNC)
+resource "coder_app" "desktop" {
+  agent_id     = coder_agent.main.id
+  slug         = "desktop"
+  display_name = "Desktop"
+  icon         = "/icon/desktop.svg"
+  url          = "http://localhost:6080"
+  subdomain    = true
+  share        = "owner"
+  order        = 0
+
+  healthcheck {
+    url       = "http://localhost:6080/vnc.html"
+    interval  = 5
+    threshold = 15
   }
 }
 
@@ -317,7 +351,7 @@ resource "kubernetes_deployment_v1" "main" {
 
         container {
           name              = "dev"
-          image             = "codercom/enterprise-base:ubuntu"
+          image             = "codercom/enterprise-desktop:ubuntu"
           image_pull_policy = "Always"
           command           = ["sh", "-c", coder_agent.main.init_script]
           security_context {
