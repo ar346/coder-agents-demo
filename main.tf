@@ -103,19 +103,25 @@ provider "kubernetes" {
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
+data "coder_parameter" "git_url" {
+  name         = "git_url"
+  display_name = "Git Repository URL"
+  description  = "A Git repository URL to clone into the workspace on start (optional)"
+  default      = ""
+  type         = "string"
+  icon         = "/icon/git.svg"
+  mutable      = true
+}
+
+locals {
+  home_folder = "/home/coder"
+  work_folder = data.coder_parameter.git_url.value != "" && length(module.git-clone) > 0 ? module.git-clone[0].repo_dir : local.home_folder
+}
+
 resource "coder_agent" "main" {
-  os             = "linux"
-  arch           = "amd64"
-  startup_script = <<-EOT
-    set -e
-
-    # Install the latest code-server.
-    # Append "--version x.x.x" to install a specific version of code-server.
-    curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/tmp/code-server
-
-    # Start code-server in the background.
-    /tmp/code-server/bin/code-server --auth none --port 13337 >/tmp/code-server.log 2>&1 &
-  EOT
+  os                 = "linux"
+  arch               = "amd64"
+  connection_timeout = 360
 
   # The following metadata blocks are optional. They are used to display
   # information about your workspace in the dashboard. You can remove them
@@ -174,21 +180,47 @@ resource "coder_agent" "main" {
   }
 }
 
-# code-server
-resource "coder_app" "code-server" {
-  agent_id     = coder_agent.main.id
-  slug         = "code-server"
-  display_name = "code-server"
-  icon         = "/icon/code.svg"
-  url          = "http://localhost:13337?folder=/home/coder"
-  subdomain    = false
-  share        = "owner"
+# --- Coder Modules ---
 
-  healthcheck {
-    url       = "http://localhost:13337/healthz"
-    interval  = 3
-    threshold = 10
-  }
+module "coder-login" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/coder-login/coder"
+  agent_id = coder_agent.main.id
+}
+
+module "vscode-web" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/vscode-web/coder"
+  agent_id = coder_agent.main.id
+  folder   = local.work_folder
+  accept_license = true
+  order    = 1
+  group    = "Web Editors"
+}
+
+module "vscode-desktop" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/vscode-desktop/coder"
+  agent_id = coder_agent.main.id
+  folder   = local.work_folder
+  order    = 2
+  group    = "Desktop IDEs"
+}
+
+module "filebrowser" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/filebrowser/coder"
+  agent_id = coder_agent.main.id
+  order    = 3
+}
+
+module "git-clone" {
+  count    = data.coder_parameter.git_url.value != "" ? data.coder_workspace.me.start_count : 0
+  source   = "registry.coder.com/coder/git-clone/coder"
+  version  = "1.2.3"
+  agent_id = coder_agent.main.id
+  url      = data.coder_parameter.git_url.value
+  base_dir = local.home_folder
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
