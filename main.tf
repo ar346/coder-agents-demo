@@ -35,7 +35,7 @@ data "coder_parameter" "cpu" {
   name         = "cpu"
   display_name = "CPU"
   description  = "The number of CPU cores"
-  default      = "2"
+  default      = "4"
   icon         = "/icon/memory.svg"
   mutable      = true
   option {
@@ -60,7 +60,7 @@ data "coder_parameter" "memory" {
   name         = "memory"
   display_name = "Memory"
   description  = "The amount of memory in GB"
-  default      = "2"
+  default      = "4"
   icon         = "/icon/memory.svg"
   mutable      = true
   option {
@@ -115,14 +115,13 @@ data "coder_parameter" "git_url" {
 
 locals {
   home_folder = "/home/coder"
-  work_folder = data.coder_parameter.git_url.value != "" && length(module.git-clone) > 0 ? module.git-clone[0].repo_dir : local.home_folder
+  work_folder = local.home_folder
 }
 
 resource "coder_agent" "main" {
   os                 = "linux"
   arch               = "amd64"
   connection_timeout = 360
-  startup_script = ""
 
   display_apps {
     vscode          = false
@@ -188,16 +187,6 @@ resource "coder_agent" "main" {
   }
 }
 
-# Desktop (KasmVNC) - provides a full desktop environment in the browser
-module "kasmvnc" {
-  count               = data.coder_workspace.me.start_count
-  source              = "registry.coder.com/coder/kasmvnc/coder"
-  agent_id            = coder_agent.main.id
-  desktop_environment = "xfce"
-  port                = 6800
-  order               = 0
-}
-
 # --- Coder Modules ---
 
 module "coder-login" {
@@ -223,6 +212,12 @@ module "vscode-desktop" {
   folder   = local.work_folder
   order    = 2
   group    = "Desktop IDEs"
+}
+
+module "portabledesktop" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/portabledesktop/coder"
+  agent_id = coder_agent.main.id
 }
 
 module "filebrowser" {
@@ -347,8 +342,8 @@ resource "kubernetes_deployment_v1" "main" {
           }
           resources {
             requests = {
-              "cpu"    = "250m"
-              "memory" = "512Mi"
+              "cpu"    = "${data.coder_parameter.cpu.value}"
+              "memory" = "${data.coder_parameter.memory.value}Gi"
             }
             limits = {
               "cpu"    = "${data.coder_parameter.cpu.value}"
